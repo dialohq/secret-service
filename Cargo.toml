@@ -1,0 +1,26 @@
+[package]
+name = "secretservice"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+anyhow = "1.0.102"
+async-trait = "0.1.89"
+axum = "0.8.8"
+clap = {version = "4.6.0", features = ["derive"]}
+gethostname = "1.1.0"
+rand = "0.10.0"
+reqwest = {version = "0.12", features = ["json"]}
+russh = "0.60.0"
+russh-sftp = "2.1.1"
+serde = {version = "1.0.228", features = ["derive"]}
+serde_json = "1"
+sqlite = "0.37.0"
+tokio = {version = "1.50.0", features = ["rt-multi-thread", "sync"]}
+tracing = "0.1.44"
+tracing-subscriber = "0.3.23"
+uuid = {version = "1.23.0", features = ["v4"]}
+
+[[bin]]
+name = "secretservice"
+path = "src/main.rs"
