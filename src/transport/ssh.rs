@@ -17,7 +17,7 @@ use russh_sftp::client::SftpSession;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use tracing::{Instrument, Level, event, info, span};
+use tracing::{instrument, Instrument, Level, event, info, span};
 use uuid::Uuid;
 
 #[derive(Clone)]
@@ -179,20 +179,13 @@ impl SSHSession {
         Ok(())
     }
 
-    pub async fn new<'a>(
+    #[instrument(name = "ssh-connection", skip(db, config), fields(addr = config.address, username = config.username))]
+    pub async fn new(
         db: Arc<HostkeyDB>,
         hostname: &str,
         config: &SSHAccessConfig,
         root: bool,
     ) -> Result<Self> {
-        let span = span!(
-            Level::INFO,
-            "ssh-connection",
-            hostname,
-            addr = config.address,
-            username = config.username
-        );
-
         let encoded_key = utils::run_command("ssh-key", &config.key.command)?;
         let key = decode_secret_key(&encoded_key, None)?;
         let key = PrivateKeyWithHashAlg::new(Arc::new(key), None);
@@ -207,25 +200,20 @@ impl SSHSession {
             (config.address.as_str(), 22),
             client.clone(),
         )
-        .instrument(span.clone())
         .await?;
         let authentication_result = session
             .authenticate_publickey(config.username.clone(), key)
-            .instrument(span.clone())
             .await?;
         if !authentication_result.success() {
             bail!("Authentication failure.");
         }
         let sftp_channel = session
             .channel_open_session()
-            .instrument(span.clone())
             .await?;
         sftp_channel
             .request_subsystem(true, "sftp")
-            .instrument(span.clone())
             .await?;
         let sftp = SftpSession::new(sftp_channel.into_stream())
-            .instrument(span)
             .await?;
 
         Ok(Self {
