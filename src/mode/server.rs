@@ -109,7 +109,7 @@ impl Server {
         socket.set_broadcast(true)?;
         let mut buf = [0u8; 4096];
         loop {
-            info!("Waitig for msg");
+            info!("Waiting for msg...");
             let (n, src) = match socket.recv_from(&mut buf).await {
                 Ok((n, src)) => {
                     info!(?src, len = n, "Received message");
