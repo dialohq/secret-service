@@ -1,38 +1,61 @@
-mod args;
 mod db;
 mod mode;
 mod transport;
 mod utils;
 
-use args::Args;
-use clap::Parser;
-use tracing::{error, info};
 use tracing_subscriber;
+use tracing::info;
+use anyhow::Result;
+use clap::Parser;
+use clap::Subcommand;
+use mode::{Client, Server};
+use std::net::{Ipv4Addr, SocketAddr};
 
-use crate::mode::ExecutionMode;
+#[derive(Parser)]
+#[command(name = "secret-service")]
+struct Cli {
+    #[command(subcommand)]
+    command: Commands,
+}
+
+#[derive(Subcommand)]
+enum Commands {
+    Client {
+        #[arg(short, long)]
+        bind: Ipv4Addr,
+
+        #[arg(short, long, default_value_t = 41235)]
+        port: u16,
+
+        #[arg(short, long)]
+        target: SocketAddr,
+    },
+    Server {
+        #[arg(short, long)]
+        config: String,
+
+        #[arg(short, long, default_value_t = 41234)]
+        port: u16,
+
+        #[arg(short, long)]
+        root: bool,
+    },
+}
 
 #[tokio::main]
-async fn main() {
+async fn main() -> Result<()> {
     tracing_subscriber::fmt().init();
     info!("SecretService starting...");
 
-    let result = match Args::parse().validate() {
-        Ok(args) => args,
-        Err(e) => {
-            error!(err = ?e, "Error validating arguments");
-            std::process::exit(1);
+    let cli = Cli::parse();
+    match cli.command {
+        Commands::Client { bind, target, port } => {
+            let client = Client::new(bind, target, port);
+            client.run().await
         }
-    }
-    .run()
-    .await;
-
-    match result {
-        Ok(()) => {
-            info!("Finished successfully")
-        }
-        Err(err) => {
-            error!("Encountered an error: {}", err);
-            std::process::exit(1);
+        Commands::Server { config, port, root } => {
+            let server = Server::new(config, port, root)?;
+            server.run().await
         }
     }
 }

@@ -1,11 +1,8 @@
-use super::ExecutionMode;
 use super::Secret;
-use crate::args::Args;
 use crate::db::HostkeyDB;
 use crate::transport::SSHSession;
 use crate::transport::Transporter;
 use anyhow::{Result, bail};
-use async_trait::async_trait;
 use serde::Deserialize;
 use std::collections::HashMap;
 use std::fs;
@@ -50,16 +47,12 @@ pub struct Server {
 }
 
 impl Server {
-    pub fn new(args: &Args) -> Result<Self> {
-        let cfg_path = match args.config {
-            None => bail!("Server mode requires --config"),
-            Some(ref cfg_path) => cfg_path,
-        };
-        info!(source = ?cfg_path, "Reading config file");
-        let cfg_file = Path::new(&cfg_path);
+    pub fn new(config: String, port: u16, root: bool) -> Result<Self> {
+        info!(source = ?config, "Reading config file");
+        let cfg_file = Path::new(&config);
 
         if !cfg_file.exists() {
-            bail!("Config file does not exist: {}", cfg_path);
+            bail!("Config file does not exist: {}", config);
         }
 
         let cfg_json = match fs::read_to_string(cfg_file) {
@@ -67,11 +60,7 @@ impl Server {
                 info!(size = contents.len(), "Read config file contents");
                 contents
             }
-            Err(err) => bail!(
-                "Couldn't read contents of config file {}: {}",
-                &cfg_path,
-                err
-            ),
+            Err(err) => bail!("Couldn't read contents of config file {}: {}", &config, err),
         };
         let cfg: ConfigFile = match serde_json::from_str::<ConfigFile>(&cfg_json) {
             Ok(cfg) => {
@@ -82,7 +71,7 @@ impl Server {
                 );
                 cfg
             }
-            Err(err) => bail!("Malformed JSON in config file {}: {}", cfg_path, err),
+            Err(err) => bail!("Malformed JSON in config file {}: {}", config, err),
         };
 
         let state_dir = match std::env::var("STATE_DIRECTORY") {
@@ -94,8 +83,8 @@ impl Server {
         db.init_hosts(cfg.hosts.keys())?;
 
         Ok(Self {
-            port: args.port,
-            root: args.root,
+            port: port,
+            root: root,
             db: Arc::new(db),
             config: cfg,
         })
@@ -115,15 +104,12 @@ impl Server {
             }
         }
     }
-}
-
-#[async_trait]
-impl ExecutionMode for Server {
-    async fn run(&self) -> Result<()> {
+    pub async fn run(&self) -> Result<()> {
         let socket = UdpSocket::bind(format!("0.0.0.0:{}", self.port)).await?;
         socket.set_broadcast(true)?;
         let mut buf = [0u8; 4096];
         loop {
+            info!("Waitig for msg");
             let (n, src) = match socket.recv_from(&mut buf).await {
                 Ok((n, src)) => {
                     info!(?src, len = n, "Received message");

@@ -5,8 +5,6 @@ pub use client::Client;
 pub use server::SSHAccessConfig;
 pub use server::Server;
 
-use anyhow::Result;
-use async_trait::async_trait;
 use serde::Deserialize;
 
 #[derive(Deserialize, Debug, Clone)]
@@ -23,9 +21,4 @@ pub struct Secret {
 
     #[allow(dead_code)]
     pub r#type: SecretType,
-}
-
-#[async_trait]
-pub trait ExecutionMode {
-    async fn run(&self) -> Result<()>;
 }
