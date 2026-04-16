@@ -5,9 +5,9 @@ use crate::transport::Transporter;
 use anyhow::{Result, bail};
 use serde::Deserialize;
 use std::collections::HashMap;
-use std::fs;
 use std::path::Path;
 use std::sync::Arc;
+use tokio::fs;
 use tokio::net::UdpSocket;
 use tracing::{Instrument, Level, error, info, span};
 
@@ -47,7 +47,7 @@ pub struct Server {
 }
 
 impl Server {
-    pub fn new(config: String, port: u16, root: bool) -> Result<Self> {
+    pub async fn new(config: String, port: u16, root: bool) -> Result<Self> {
         info!(source = ?config, "Reading config file");
         let cfg_file = Path::new(&config);
 
@@ -55,7 +55,7 @@ impl Server {
             bail!("Config file does not exist: {}", config);
         }
 
-        let cfg_json = match fs::read_to_string(cfg_file) {
+        let cfg_json = match fs::read_to_string(cfg_file).await {
             Ok(contents) => {
                 info!(size = contents.len(), "Read config file contents");
                 contents
@@ -79,8 +79,8 @@ impl Server {
             Err(err) => bail!("Couldn't read $STATE_DIRECTORY env var: {}", err),
         };
 
-        let db = HostkeyDB::new(state_dir)?;
-        db.init_hosts(cfg.hosts.keys())?;
+        let db = HostkeyDB::new(state_dir).await?;
+        db.init_hosts(cfg.hosts.keys()).await?;
 
         Ok(Self {
             port: port,
