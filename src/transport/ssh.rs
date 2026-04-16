@@ -17,7 +17,7 @@ use russh_sftp::client::SftpSession;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use tracing::{instrument, Instrument, Level, event, info, span};
+use tracing::{Instrument, Level, event, info, instrument, span};
 use uuid::Uuid;
 
 #[derive(Clone)]
@@ -38,7 +38,8 @@ impl Handler for SSHClient {
             .to_string();
         Ok(self
             .db_conn
-            .authenticate(self.hostname.as_ref(), fingerprint))
+            .authenticate(self.hostname.as_ref(), fingerprint)
+            .await)
     }
 
     async fn data(
@@ -104,7 +105,8 @@ impl SSHSession {
     pub async fn ensure_directory(&self, path: PathBuf) -> Result<()> {
         let dir_str = path.to_string_lossy();
         if self.root {
-            self.exec(&format!("sudo mkdir -p {}", dir_str)).await
+            self.exec(&format!("sudo mkdir -p {}", dir_str))
+                .await
                 .with_context(|| format!("sudo mkdir -p failed: {}", dir_str))?;
         } else {
             let ancestors: Vec<_> = path.ancestors().collect();
@@ -152,9 +154,12 @@ impl SSHSession {
 
         let sudo = if self.root { "sudo " } else { "" };
 
-        self.exec(&format!("{}mv {} {}", sudo, tmp_path_str, &secret.target_path))
-            .await
-            .with_context(|| format!("mv to {} failed", secret.target_path))?;
+        self.exec(&format!(
+            "{}mv {} {}",
+            sudo, tmp_path_str, &secret.target_path
+        ))
+        .await
+        .with_context(|| format!("mv to {} failed", secret.target_path))?;
 
         self.sftp
             .remove_dir(&tmp_dir)
@@ -207,14 +212,9 @@ impl SSHSession {
         if !authentication_result.success() {
             bail!("Authentication failure.");
         }
-        let sftp_channel = session
-            .channel_open_session()
-            .await?;
-        sftp_channel
-            .request_subsystem(true, "sftp")
-            .await?;
-        let sftp = SftpSession::new(sftp_channel.into_stream())
-            .await?;
+        let sftp_channel = session.channel_open_session().await?;
+        sftp_channel.request_subsystem(true, "sftp").await?;
+        let sftp = SftpSession::new(sftp_channel.into_stream()).await?;
 
         Ok(Self {
             client,

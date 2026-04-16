@@ -54,7 +54,7 @@ async fn main() -> Result<()> {
             client.run().await
         }
         Commands::Server { config, port, root } => {
-            let server = Server::new(config, port, root)?;
+            let server = Server::new(config, port, root).await?;
             server.run().await
         }
     }

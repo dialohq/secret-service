@@ -1,41 +1,47 @@
 use anyhow::Result;
-use sqlite;
 use std::path::{Path, PathBuf};
+use tokio_rusqlite::{Connection, params};
 use tracing::info;
 
 pub struct HostkeyDB {
-    connection: sqlite::ConnectionThreadSafe,
+    connection: Connection,
 
     #[allow(dead_code)]
     path: PathBuf,
 }
 
 impl HostkeyDB {
-    pub fn new(state_dir: String) -> Result<Self> {
+    pub async fn new(state_dir: String) -> Result<Self> {
         let dir_ref = &state_dir;
         let joined_path = Path::new(dir_ref).join(Path::new("hostkeys.db"));
-        let connection = sqlite::Connection::open_thread_safe(joined_path.as_path())?;
-        Self::prepare(&connection)?;
+        let connection = Connection::open(joined_path.as_path()).await?;
+        Self::prepare(&connection).await?;
         Ok(Self {
             path: joined_path,
             connection,
         })
     }
 
-    fn prepare(db_conn: &sqlite::ConnectionThreadSafe) -> Result<()> {
-        db_conn.execute(
-            r#"CREATE TABLE IF NOT EXISTS hostkeys (
-                hostname TEXT UNIQUE,
-                KEY TEXT,
-                updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-            );"#,
-        )?;
+    async fn prepare(db_conn: &Connection) -> Result<()> {
+        let () = db_conn
+            .call(|conn| {
+                conn.execute(
+                    r#"CREATE TABLE IF NOT EXISTS hostkeys (
+                    hostname TEXT UNIQUE,
+                    KEY TEXT,
+                    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                );"#,
+                    (),
+                )?;
+                tokio_rusqlite::Result::Ok(())
+            })
+            .await?;
         Ok(())
     }
 
-    pub fn authenticate(&self, hostname: &str, public_key: String) -> bool {
-        match self.get_key(hostname) {
+    pub async fn authenticate(&self, hostname: &str, public_key: String) -> bool {
+        match self.get_key(hostname).await {
             None => {
                 info!(hostname, "HostkeyDB entry does not exist for this host");
                 false
@@ -43,7 +49,7 @@ impl HostkeyDB {
             Some(stored_key) => match stored_key {
                 None => {
                     info!(hostname, "Known host connecting for the first time");
-                    self.set_key(hostname, public_key)
+                    self.set_key(hostname, public_key).await
                 }
                 Some(previous_key) => {
                     let success = public_key == previous_key;
@@ -56,43 +62,66 @@ impl HostkeyDB {
 
     // Outer option: row with this hostname exists
     // inner option: there is a pubkey for it in the db
-    fn get_key(&self, hostname: &str) -> Option<Option<String>> {
-        let mut pubkey: Option<Option<String>> = None;
-        // TODO: maybe check if for some reason there are many rows even though the table is unique?
-        let result = self.connection.iterate(
-            format!("SELECT key FROM hostkeys WHERE hostname = '{}'", hostname),
-            |row| {
-                // row is an array of (column_name, value) tuples
-                let key = row[0].1.map(|s| s.to_string());
-                pubkey = Some(key);
-                true
-            },
-        );
+    async fn get_key(&self, hostname: &str) -> Option<Option<String>> {
+        let hostname_owned = hostname.to_string();
+        let result = self
+            .connection
+            .call(move |conn| {
+                let mut stmt = conn.prepare("SELECT key FROM hostkeys WHERE hostname = ?1")?;
+                let mut rows = stmt.query([&hostname_owned])?;
+                match rows.next()? {
+                    Some(row) => {
+                        let key: Option<String> = row.get(0)?;
+                        tokio_rusqlite::Result::Ok(Some(key))
+                    }
+                    None => Ok(None),
+                }
+            })
+            .await;
 
         match result {
+            Ok(pubkey) => pubkey,
             Err(err) => {
                 info!(hostname, ?err, "Error checking hostkeyDB");
+                None
             }
-            _ => {}
         }
-        return pubkey;
     }
 
-    pub fn init_hosts(&self, hostnames: impl Iterator<Item = impl AsRef<str>>) -> Result<()> {
-        for hostname in hostnames {
-            self.connection.execute(format!(
-                "INSERT OR IGNORE INTO hostkeys (hostname) VALUES ('{}');",
-                hostname.as_ref()
-            ))?;
-        }
+    pub async fn init_hosts(&self, hostnames: impl Iterator<Item = impl AsRef<str>>) -> Result<()> {
+        let hostnames: Vec<String> = hostnames.map(|h| h.as_ref().to_string()).collect();
+        self.connection
+            .call(move |conn| {
+                let tx = conn.transaction()?;
+                {
+                    let mut stmt =
+                        tx.prepare("INSERT OR IGNORE INTO hostkeys (hostname) VALUES (?1)")?;
+                    for hostname in &hostnames {
+                        stmt.execute([hostname])?;
+                    }
+                }
+                tx.commit()?;
+                tokio_rusqlite::Result::Ok(())
+            })
+            .await?;
         Ok(())
     }
 
-    fn set_key(&self, hostname: &str, public_key: String) -> bool {
-        match self.connection.execute(format!(
-            "UPDATE hostkeys SET key = '{}', updated_at = CURRENT_TIMESTAMP WHERE hostname = '{}';",
-            public_key, hostname
-        )) {
+    async fn set_key(&self, hostname: &str, public_key: String) -> bool {
+        let hostname_owned = hostname.to_string();
+        let result = self
+            .connection
+            .call(move |conn| {
+                conn.execute(
+                    "UPDATE hostkeys SET key = ?1, updated_at = CURRENT_TIMESTAMP \
+                     WHERE hostname = ?2",
+                    params![public_key, hostname_owned],
+                )?;
+                tokio_rusqlite::Result::Ok(())
+            })
+            .await;
+
+        match result {
             Ok(()) => true,
             Err(err) => {
                 info!(hostname, ?err, "Error updating hostkey");
