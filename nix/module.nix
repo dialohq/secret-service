@@ -2,6 +2,7 @@
   pkgs,
   lib,
   config,
+  secret-service,
   ...
 }: let
   cfg = config.dialo.services.secretservice;
@@ -120,7 +121,7 @@ in {
       };
       serviceConfig = {
         Type = "oneshot";
-        ExecStart = "${pkgs.secretservice}/bin/secretservice --mode client --target ${cfg.target} --bind ${cfg.bind}";
+        ExecStart = "${secret-service}/bin/secretservice --mode client --target ${cfg.target} --bind ${cfg.bind}";
         Restart = "on-failure";
         RestartSec = "5s";
         TimeoutStopSec = "5s";
@@ -146,7 +147,7 @@ in {
         StateDirectory = "secret-service-server-state";
         RuntimeDirectory = "secret-service-server-runtime";
         Type = "exec";
-        ExecStart = "${pkgs.secretservice}/bin/secretservice --mode server --port ${cfg.server.port} ${
+        ExecStart = "${secret-service}/bin/secretservice --mode server --port ${cfg.server.port} ${
           if cfg.server.root
           then "--root"
           else ""
