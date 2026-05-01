@@ -24,42 +24,46 @@ in {
     };
     secrets = lib.mkOption {
       default = {};
-      type = t.attrsOf (t.submodule {
-        options = {
-          type = lib.mkOption {type = t.enum ["command"];};
-          command = lib.mkOption {
-            type = t.nullOr t.str;
-            default = null;
+      type = t.attrsOf (
+        t.submodule {
+          options = {
+            type = lib.mkOption {type = t.enum ["command"];};
+            command = lib.mkOption {
+              type = t.nullOr t.str;
+              default = null;
+            };
+            targetPath = lib.mkOption {type = t.str;};
           };
-          targetPath = lib.mkOption {type = t.str;};
-        };
-      });
+        }
+      );
     };
     hosts = lib.mkOption {
       default = {};
       description = "Hosts the server will deliver secrets to, keyed by hostname";
-      type = t.attrsOf (t.submodule {
-        options = {
-          access = lib.mkOption {
-            type = t.submodule {
-              options = {
-                ssh = lib.mkOption {
-                  type = t.submodule {
-                    options = {
-                      username = lib.mkOption {
-                        type = t.str;
-                        default = "root";
-                      };
-                      address = lib.mkOption {type = t.str;};
-                      key = lib.mkOption {
-                        type = t.submodule {
-                          options = {
-                            type = lib.mkOption {type = t.str;};
-                            command = lib.mkOption {type = t.str;};
-                            targetPath = lib.mkOption {
-                              type = t.str;
-                              default = "-";
-                              readOnly = true;
+      type = t.attrsOf (
+        t.submodule {
+          options = {
+            access = lib.mkOption {
+              type = t.submodule {
+                options = {
+                  ssh = lib.mkOption {
+                    type = t.submodule {
+                      options = {
+                        username = lib.mkOption {
+                          type = t.str;
+                          default = "root";
+                        };
+                        address = lib.mkOption {type = t.str;};
+                        key = lib.mkOption {
+                          type = t.submodule {
+                            options = {
+                              type = lib.mkOption {type = t.str;};
+                              command = lib.mkOption {type = t.str;};
+                              targetPath = lib.mkOption {
+                                type = t.str;
+                                default = "-";
+                                readOnly = true;
+                              };
                             };
                           };
                         };
@@ -70,8 +74,8 @@ in {
               };
             };
           };
-        };
-      });
+        }
+      );
     };
     server = lib.mkOption {
       default = {};
@@ -88,16 +92,18 @@ in {
           };
           credentials = lib.mkOption {
             default = [];
-            type = t.listOf (t.submodule {
-              options = {
-                name = lib.mkOption {type = t.str;};
-                filePath = lib.mkOption {type = t.str;};
-                encrypted = lib.mkOption {
-                  type = t.bool;
-                  default = false;
+            type = t.listOf (
+              t.submodule {
+                options = {
+                  name = lib.mkOption {type = t.str;};
+                  filePath = lib.mkOption {type = t.str;};
+                  encrypted = lib.mkOption {
+                    type = t.bool;
+                    default = false;
+                  };
                 };
-              };
-            });
+              }
+            );
           };
           path = lib.mkOption {
             type = t.listOf t.package;
@@ -113,15 +119,21 @@ in {
       description = "Secret service client";
       before = ["multi-user.target"];
 
-      wants = ["network-online.target" "secret-service-server.service"];
-      after = ["network-online.target" "secret-service-server.service"];
+      wants = [
+        "network-online.target"
+        "secret-service-server.service"
+      ];
+      after = [
+        "network-online.target"
+        "secret-service-server.service"
+      ];
       unitConfig = {
         StartLimitBurst = 3;
         StartLimitIntervalSec = 60;
       };
       serviceConfig = {
         Type = "oneshot";
-        ExecStart = "${secret-service}/bin/secretservice --mode client --target ${cfg.target} --bind ${cfg.bind}";
+        ExecStart = "${secret-service}/bin/secretservice client --target ${cfg.target} --bind ${cfg.bind}";
         Restart = "on-failure";
         RestartSec = "5s";
         TimeoutStopSec = "5s";
@@ -147,7 +159,7 @@ in {
         StateDirectory = "secret-service-server-state";
         RuntimeDirectory = "secret-service-server-runtime";
         Type = "exec";
-        ExecStart = "${secret-service}/bin/secretservice --mode server --port ${cfg.server.port} ${
+        ExecStart = "${secret-service}/bin/secretservice server --port ${cfg.server.port} ${
           if cfg.server.root
           then "--root"
           else ""
